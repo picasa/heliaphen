@@ -1,0 +1,265 @@
+---
+title: "Heliaphen"
+output:
+  flexdashboard::flex_dashboard:
+    source_code: embed
+runtime: shiny
+---
+
+```{r header, include=FALSE}
+library(readr)
+library(readxl)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+library(flexdashboard)
+library(rheliaphen)
+library(shiny)
+
+# experiment parameters
+data_trial <- reactive({
+  read_excel(paste0("data/heliaphen_experiments.xlsx")) %>% 
+    mutate(start=as.POSIXct(start), end=as.POSIXct(end)) %>% 
+    filter(Experiment==input$experiment)
+})
+
+# design of experiment
+data_index <- reactive({
+  read_excel(paste0("data/",input$experiment,"/",input$experiment,"_index.xlsx"))
+})
+
+# list of genotypes in selected experiment
+list_genotype <- reactive({
+  data_index() %>% select(Genotype) %>% distinct() %>% arrange(Genotype) %>% .$Genotype
+})
+
+# pot weight
+data_weight <- reactive({
+  read_rds(paste0("data/",input$experiment,"/",input$experiment,"_weight.rds")) 
+})
+
+# soil water deficit
+data_ftsw <- reactive({
+  data_weight() %>%
+    soil_water_deficit(
+      index=data_index(),
+      date_start=data_trial()$start,
+      date_end=data_trial()$end,
+      weight_dead=data_trial()$weight_dead,
+      awc=0.39,
+      timing="measure"
+    ) 
+})
+
+data_ftsw_label <- reactive({
+  data_ftsw() %>%
+    filter(Genotype == input$genotype) %>%
+    group_by(Treatment, Genotype, Plant_Code) %>%
+    arrange(Date) %>%
+    filter(row_number()==n())
+})
+
+# interpolated soil water deficit
+data_ftsw_daily <- reactive({
+  data_weight() %>%
+    soil_water_deficit(
+      index=data_index(),
+      date_start=data_trial()$start,
+      date_end=data_trial()$end,
+      weight_dead=data_trial()$weight_dead,
+      awc=0.39,
+      timing="daily"
+    ) 
+})
+
+# table for stressed plant below defined water deficit threshold
+table_harvest <- reactive({
+  data_ftsw_daily() %>%
+    plant_harvest(
+      date_start=as.POSIXct(as.character(input$date[1])),
+      date_end=as.POSIXct(as.character(input$date[2]))
+    )
+})
+
+```
+
+
+Sidebar {.sidebar}
+=====================================
+```{r}
+
+# shiny input for file selection (list)
+# TODO : read existing dir
+selectInput('experiment', 'Experiment', c("14HP09","15HP01","15HP03"))
+
+# shiny input for genotype selection (list)
+renderUI({
+  selectInput('genotype', 'Genotype', list_genotype())
+})
+
+# shiny input for interpolation (check)
+
+# shiny input for water deficit computation (awc) (slider)
+
+# shiny input for planning date selection
+renderUI({
+  dateRangeInput('date', label='Harvest dates', start=data_trial()$start, end=data_trial()$end)
+})
+  
+
+
+```
+
+
+Design {data-orientation=rows}
+=====================================  
+    
+Row {data-height=250}
+-------------------------------------
+    
+### Experimental design
+```{r}
+# plot experimental design
+renderPlot({
+  data_index() %>% 
+    ggplot(aes(as.factor(Column), as.factor(Line))) +
+    geom_tile(aes(fill=Genotype), alpha=0.5) +
+    geom_point(aes(shape=Treatment), size=5, alpha=0.5) +
+    scale_shape_manual(values=c(19, 1), guide = "none") +
+    labs(x=NULL, y=NULL) + coord_equal() + theme_bw() +
+    theme(legend.position="bottom")
+})
+
+```
+
+
+Row {data-height=600}
+-------------------------------------
+
+### Table of harvestable plants
+```{r}
+
+# renderText(as.POSIXct("2014-06-04") == as.POSIXct(as.character(input$date[1])))
+
+renderDataTable(
+  table_harvest() %>%
+    mutate(
+      Weight_t=round(Weight_t, 0),
+      FTSW=round(FTSW, 2),
+      Irrigation=round(Irrigation, 0)
+    ),
+  options=list(pageLength=10)
+)
+
+
+```
+
+
+
+Weight
+=====================================     
+   
+Row 
+-------------------------------------
+
+### Total pot weight as a function of time (all genotypes)
+```{r}
+
+renderPlot({
+  data_weight() %>%
+    ggplot(aes(x=Date, y=Weight_t, color=Treatment, group=interaction(Genotype, Treatment))) +
+    geom_point(alpha=0.3) +
+    geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
+    geom_hline(aes(yintercept=0.1), linetype=2) +  
+    scale_color_manual(values=c("#619CFF","#F8766D")) +
+    scale_x_datetime(
+      date_breaks="1 day", labels=date_format("%d/%m"),
+      limits=c(data_trial()$start, data_trial()$end)
+    ) + ylim(3500, 12000) +
+    theme_bw() + theme(axis.text.x = element_text(angle=90, vjust=0.5), legend.position="none")
+})
+
+```
+
+
+Row 
+-------------------------------------
+
+### Total pot weight as a function of time (selection)
+```{r}
+
+renderPlot({
+  data_weight() %>%
+    filter(Genotype == input$genotype) %>%
+    ggplot(aes(x=Date, y=Weight_t, color=Treatment, group=Plant_Code)) +
+    geom_line() +
+    geom_hline(aes(yintercept=0.1), linetype=2) +
+    scale_color_manual(values=c("#619CFF","#F8766D")) +
+    scale_x_datetime(
+      date_breaks="1 day", labels=date_format("%d/%m"),
+      limits=c(data_trial()$start, data_trial()$end)
+    ) + ylim(3500, 12000) +
+    theme_bw() + theme(axis.text.x = element_text(angle=90, vjust=0.5), legend.position="none")
+})
+
+```
+
+
+
+
+Water deficit
+=====================================     
+   
+Row
+-------------------------------------
+
+### FTSW as a function of time (all genotypes)
+```{r}
+
+renderPlot({
+  data_ftsw() %>%
+    ggplot(aes(x=Date, y=FTSW, color=Treatment, group=interaction(Genotype, Treatment))) +
+    geom_point(alpha=0.3) +
+    geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
+    geom_hline(aes(yintercept=0.1), linetype=2) +  
+    scale_color_manual(values=c("#619CFF","#F8766D")) +
+    scale_x_datetime(
+      date_breaks="1 day", labels=date_format("%d/%m"),
+      limits=c(data_trial()$start, data_trial()$end)
+    ) + ylim(0, 1.1) +
+    theme_bw() + theme(axis.text.x = element_text(angle=90, vjust=0.5), legend.position="none")
+})
+
+```
+
+Row
+-------------------------------------
+
+### FTSW as a function of time (selection)
+```{r}
+
+renderPlot({
+  data_ftsw() %>%
+    filter(Genotype == input$genotype) %>%
+    ggplot(aes(x=Date, y=FTSW, color=Treatment, group=Plant_Code)) +
+    geom_line() +
+    geom_hline(aes(yintercept=0.1), linetype=2) +
+    geom_text_repel(
+      data=data_ftsw_label(),
+      aes(x=data_trial()$end, FTSW, label=Position),
+      segment.color=NA, force=0.5
+    ) +
+    #facet_wrap(~ Genotype) +
+    scale_color_manual(values=c("#619CFF","#F8766D")) +
+    scale_x_datetime(
+      date_breaks="1 day", labels=date_format("%d/%m"),
+      limits=c(data_trial()$start, data_trial()$end)
+    ) + ylim(0, 1.1) +
+    theme_bw() + theme(axis.text.x = element_text(angle=90, vjust=0.5), legend.position="none")
+})
+
+```
+
+
