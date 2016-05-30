@@ -79,7 +79,8 @@ table_harvest <- reactive({
   data_ftsw_daily() %>%
     plant_harvest(
       date_start=as.POSIXct(as.character(input$date[1])),
-      date_end=as.POSIXct(as.character(input$date[2]))
+      date_end=as.POSIXct(as.character(input$date[2])),
+      threshold=input$threshold_ftsw
     )
 })
 
@@ -101,14 +102,43 @@ renderUI({
 
 # shiny input for interpolation (check)
 
-# shiny input for water deficit computation (awc) (slider)
+```
 
+----------
+
+```{r}
 # shiny input for planning date selection
 renderUI({
-  dateRangeInput('date', label='Harvest dates', start=data_trial()$start, end=data_trial()$end)
+  dateRangeInput('date', label='Dates', start=data_trial()$start, end=data_trial()$end)
 })
   
+# shiny input for filtering threshold
+renderUI({
+  sliderInput("threshold_ftsw", label="Threshold", min=0, max=1, value=0.1)
+})
 
+# setup data download
+output$table_download_area <- downloadHandler(
+  file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_area.csv"), 
+  content = function(file) {
+    write_csv(write_heliaphen(table_harvest())$area, file, na="")
+  }
+)
+
+renderUI({
+  downloadLink('table_download_area', label = 'Download (leaf area)')  
+})
+  
+output$table_download_architecture <- downloadHandler(
+  file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_architecture.csv"), 
+  content = function(file) {
+    write_csv(write_heliaphen(table_harvest())$architecture, file, na="")
+  }
+)
+
+renderUI({
+  downloadLink('table_download_architecture', label = 'Download (architecture)')
+})
 
 ```
 
@@ -152,7 +182,6 @@ renderDataTable(
     ),
   options=list(pageLength=10)
 )
-
 
 ```
 
@@ -223,7 +252,7 @@ renderPlot({
     ggplot(aes(x=Date, y=FTSW, color=Treatment, group=interaction(Genotype, Treatment))) +
     geom_point(alpha=0.3) +
     geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
-    geom_hline(aes(yintercept=0.1), linetype=2) +  
+    geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +  
     scale_color_manual(values=c("#619CFF","#F8766D")) +
     scale_x_datetime(
       date_breaks="1 day", labels=date_format("%d/%m"),
@@ -245,7 +274,7 @@ renderPlot({
     filter(Genotype == input$genotype) %>%
     ggplot(aes(x=Date, y=FTSW, color=Treatment, group=Plant_Code)) +
     geom_line() +
-    geom_hline(aes(yintercept=0.1), linetype=2) +
+    geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
     geom_text_repel(
       data=data_ftsw_label(),
       aes(x=data_trial()$end, FTSW, label=Position),
