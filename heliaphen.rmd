@@ -13,7 +13,7 @@ library(readxl)
 library(plyr)
 library(dplyr)
 library(ggplot2)
-library(ggrepel)
+library(plotly)
 library(scales)
 library(flexdashboard)
 library(rheliaphen)
@@ -58,14 +58,6 @@ data_ftsw <- reactive({
     ) 
 })
 
-data_ftsw_label <- reactive({
-  data_ftsw() %>%
-    filter(genotype == input$genotype) %>%
-    group_by(treatment, genotype, plant_code) %>%
-    arrange(time) %>%
-    filter(row_number()==n())
-})
-
 # interpolated soil water deficit
 data_ftsw_daily <- reactive({
   data_weight() %>%
@@ -79,20 +71,11 @@ data_ftsw_daily <- reactive({
     ) 
 })
 
-data_ftsw_daily_label <- reactive({
-  data_ftsw_daily() %>%
-    filter(genotype == input$genotype) %>%
-    group_by(treatment, genotype, plant_code) %>%
-    arrange(time) %>%
-    filter(row_number()==n()-1)
-})
-
-
 # table for stressed plant below defined water deficit threshold
 table_harvest <- reactive({
-  data_ftsw_daily() %>%
+  data_ftsw() %>%
     plant_harvest(
-      date_start=ymd(as.character(input$date[1], tz="Europe/Paris")),
+      date_start=ymd(as.character(input$date[1]), tz="Europe/Paris"),
       date_end=ymd(as.character(input$date[2]), tz="Europe/Paris"),
       threshold=input$threshold_ftsw
     )
@@ -162,26 +145,30 @@ renderUI({
 Design {data-orientation=rows}
 =====================================  
     
-Row {data-height=250}
+Row {.data-height=200}
 -------------------------------------
     
 ### Experimental design
 ```{r plot_design}
 # plot experimental design
-renderPlot({
-  data_index() %>% 
-    ggplot(aes(as.factor(column), as.factor(line))) +
-    geom_tile(aes(fill=genotype), alpha=0.5) +
-    geom_point(aes(shape=treatment), size=5, alpha=0.5) +
-    scale_shape_manual(values=c(19, 1), guide = "none") +
-    labs(x=NULL, y=NULL) + coord_equal() + theme_bw() +
-    theme(legend.position="bottom")
+renderPlotly({
+  ggplotly(
+    data_index() %>%
+      mutate(column=as.factor(column), line=as.factor(line)) %>%
+      ggplot(aes(column, line, label=genotype)) +
+      geom_tile(aes(fill=genotype), alpha=0.5) +
+      geom_point(aes(shape=treatment), size=5, alpha=0.5) +
+      scale_shape_manual(values=c(19, 1), guide = "none") +
+      labs(x=NULL, y=NULL) + coord_equal() + theme_bw() +
+      theme(legend.position="none"),
+    tooltip=c("x","y","label", "shape")
+  )
 })
 
 ```
 
 
-Row {data-height=600}
+Row {data-height=900}
 -------------------------------------
 
 ### Table of harvestable plants
@@ -193,7 +180,8 @@ renderDataTable(
       weight=round(weight, 0),
       FTSW=round(FTSW, 2),
       irrigation=round(irrigation, 0)
-    ),
+    ) %>%
+    select(plant_code:irrigation, genotype, treatment),
   options=list(pageLength=10)
 )
 
@@ -230,18 +218,21 @@ renderPlot({
 ### Subset
 ```{r plot_weight_subset}
 
-renderPlot({
-  data_weight() %>%
-    filter(genotype == input$genotype) %>%
-    ggplot(aes(x=time, y=weight, color=treatment, group=plant_code)) +
-    geom_line() +
-    geom_hline(aes(yintercept=0.1), linetype=2) +
-    scale_color_manual(values=c("#619CFF","#F8766D")) +
-    scale_x_datetime(
-      date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
-      limits=c(data_trial()$start, data_trial()$end)
-    ) + ylim(3500, 12000) +
-    theme_bw() + theme(legend.position="none")
+renderPlotly({
+  ggplotly(
+    data_weight() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=time, y=weight, color=treatment, group=plant_code, label=plant_code)) +
+      geom_line() +
+      geom_hline(aes(yintercept=0.1), linetype=2) +
+      scale_color_manual(values=c("#619CFF","#F8766D")) +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) + ylim(3500, 12000) +
+      theme_bw() + theme(legend.position="none"),
+    tooltip=c("x","y","label")
+  )
 })
 
 ```
@@ -278,22 +269,21 @@ renderPlot({
 ### Subset
 ```{r plot_stress_subset}
 
-renderPlot({
-  data_ftsw() %>%
-    filter(genotype == input$genotype) %>%
-    ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code)) +
-    geom_line() +
-    geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
-    geom_text_repel(
-      data=data_ftsw_label(),
-      aes(x=time, FTSW, label=position)
-    ) +
-    scale_color_manual(values=c("#619CFF","#F8766D")) +
-    scale_x_datetime(
-      date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
-      limits=c(data_trial()$start, data_trial()$end)
-    ) + ylim(0, 1.2) +
-    theme_bw() + theme(legend.position="none")
+renderPlotly({
+  ggplotly(
+    data_ftsw() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code, label=plant_code)) +
+      geom_line() +
+      geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
+      scale_color_manual(values=c("#619CFF","#F8766D")) +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) + ylim(0, 1.2) +
+      theme_bw() + theme(legend.position="none"),
+    tooltip=c("x","y","label")
+  )
 })
 
 ```
@@ -302,23 +292,50 @@ renderPlot({
 ### Interpolation
 ```{r plot_stress_interpolation}
 
-renderPlot({
-  data_ftsw_daily() %>%
-    filter(genotype == input$genotype) %>%
-    ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code)) +
-    geom_line() +
-    geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
-    geom_text_repel(
-      data=data_ftsw_daily_label(),
-      aes(x=time, FTSW, label=position)
-    ) +
-    scale_color_manual(values=c("#619CFF","#F8766D")) +
-    scale_x_datetime(
-      date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
-      limits=c(data_trial()$start, data_trial()$end)
-    ) + ylim(0, 1.2) +
-    theme_bw() + theme(legend.position="none")
+renderPlotly({
+  ggplotly(
+    data_ftsw_daily() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code, label=plant_code)) +
+      geom_line() +
+      geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
+      scale_color_manual(values=c("#619CFF","#F8766D")) +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) + ylim(0, 1.2) +
+      theme_bw() + theme(legend.position="none"),
+    tooltip=c("x","y","label")
+  )
 })
 
 ```
+
+### Data
+```{r table_harvest_planning}
+
+# TODO : add filter for selected dates 
+renderDataTable(
+  data_ftsw() %>%
+    filter(
+      time >= ymd(as.character(input$date[1]), tz="Europe/Paris"),
+      time < ymd(as.character(input$date[2]), tz="Europe/Paris")
+      ) %>%
+    select(plant_code:irrigation, genotype, treatment),
+  options=list(pageLength=10)
+)
+
+```
+
+
+Leaf area
+=====================================     
+
+
+Expansion
+=====================================     
+
+
+Transpiration
+=====================================     
 
