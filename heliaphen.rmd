@@ -55,7 +55,6 @@ data_weight <- reactive({
 data_ftsw <- reactive({
   data_weight() %>%
     soil_water_deficit(
-      index=data_index(),
       date_start=data_trial()$start,
       date_end=data_trial()$end,
       weight_dead=data_trial()$weight_dead,
@@ -68,7 +67,6 @@ data_ftsw <- reactive({
 data_ftsw_daily <- reactive({
   data_weight() %>%
     soil_water_deficit(
-      index=data_index(),
       date_start=data_trial()$start,
       date_end=data_trial()$end,
       weight_dead=data_trial()$weight_dead,
