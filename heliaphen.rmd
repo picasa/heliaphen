@@ -24,7 +24,11 @@ library(shiny)
 # options
 theme_set(theme_bw())
 lim_area <- c(0, 350)
+scale_treatment <- scale_colour_manual(values = c("control"="#619CFF","stress"="#F8766D"))
+```
 
+
+```{r data_input, include=FALSE}
 # experiment parameters
 data_trial <- reactive({
   read_excel(paste0("data/heliaphen_experiments.xlsx")) %>% 
@@ -51,7 +55,20 @@ data_weight <- reactive({
   read_rds(paste0("data/",input$experiment,"/",input$experiment,"_weight.rds")) 
 })
 
-# soil water deficit
+# leaf area
+data_area_raw <- reactive({
+  read_rds(paste0("data/",input$experiment,"/",input$experiment,"_area_raw.rds")) 
+})
+
+data_area <- reactive({
+  read_rds(paste0("data/",input$experiment,"/",input$experiment,"_area.rds")) 
+})
+
+```
+
+```{r data_computed, include=FALSE}
+
+# compute soil water deficit as a function of pot weight and available water content
 data_ftsw <- reactive({
   data_weight() %>%
     soil_water_deficit(
@@ -63,7 +80,7 @@ data_ftsw <- reactive({
     ) 
 })
 
-# interpolated soil water deficit
+# compute interpolated soil water deficit
 data_ftsw_daily <- reactive({
   data_weight() %>%
     soil_water_deficit(
@@ -85,14 +102,19 @@ table_harvest <- reactive({
     )
 })
 
-# leaf area
-data_area_raw <- reactive({
-  read_rds(paste0("data/",input$experiment,"/",input$experiment,"_area_raw.rds")) 
+# compute plant leaf area as the sum of individual leaf area
+data_plant <- reactive({
+  data_area() %>%
+    mutate(area_active=ifelse(senescence==0, area, 0)) %>% 
+    group_by(plant_code, time) %>%
+    summarise(
+      area=sum(area),
+      area_active=sum(area_active),
+      senescence=sum(senescence)
+    ) %>% 
+    left_join(data_index())
 })
 
-data_area <- reactive({
-  read_rds(paste0("data/",input$experiment,"/",input$experiment,"_area.rds")) 
-})
 
 ```
 
@@ -465,6 +487,26 @@ renderPlotly({
 
 ### Plant dynamics
 ```{r plot_plant_dynamics}
+
+renderPlotly({
+  ggplotly(
+    data_plant() %>%
+      filter(genotype == input$genotype) %>%
+      gather(method, area, area:area_active) %>% 
+      mutate(area=area/1e6) %>% 
+      ggplot(aes(x=time, y=area, color=treatment, label=plant_code)) +
+      geom_point(data=. %>% filter(method=="area"), alpha=0.5) +
+      geom_smooth(aes(linetype=method), method="loess", se=FALSE) +
+      scale_treatment +
+      labs(y="Plant area (m2)") +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) + 
+      theme(legend.position="none"),
+    tooltip=c("x","y","label")
+  )
+})
 
 
 ```
