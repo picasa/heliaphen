@@ -10,21 +10,23 @@ runtime: shiny
 library(lubridate)
 library(readr)
 library(readxl)
-library(plyr)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
+library(tidyverse)
+library(broom)
+library(modelr)
 library(viridis)
 library(plotly)
 library(scales)
 library(flexdashboard)
 library(rheliaphen)
+library(rsunflo)
 library(shiny)
 
 # options
 theme_set(theme_bw())
 lim_area <- c(0, 350)
 scale_treatment <- scale_colour_manual(values = c("control"="#619CFF","stress"="#F8766D"))
+list_ftsw <- list(data_frame(FTSW=seq(0,1,0.05)))
+
 ```
 
 
@@ -66,8 +68,7 @@ data_area <- reactive({
 
 ```
 
-```{r data_computed, include=FALSE}
-
+```{r data_computed_water, include=FALSE}
 # compute soil water deficit as a function of pot weight and available water content
 data_ftsw <- reactive({
   data_weight() %>%
@@ -92,6 +93,13 @@ data_ftsw_daily <- reactive({
     ) 
 })
 
+# compute mean soil water deficit per genotype
+data_ftsw_mean <- reactive({
+  data_ftsw_daily() %>% 
+    group_by(treatment, genotype, time) %>% 
+    summarise(FTSW=mean(FTSW), d_weight=mean(d_weight)) 
+})
+
 # table for stressed plant below defined water deficit threshold
 table_harvest <- reactive({
   data_ftsw() %>%
@@ -102,6 +110,9 @@ table_harvest <- reactive({
     )
 })
 
+```
+
+```{r data_computed_plant, include=FALSE}
 # compute plant leaf area as the sum of individual leaf area
 data_plant <- reactive({
   data_area() %>%
@@ -115,6 +126,160 @@ data_plant <- reactive({
     left_join(data_index())
 })
 
+```
+
+```{r data_computed_expansion, include=FALSE}
+# compute expansion rate as differences between consecutive dates for all plant_code
+data_expansion <- reactive({
+  data_plant() %>% 
+    group_by(plant_code) %>% 
+    mutate(
+      d_area= area - lag(area),
+      d_area_active= area_active - lag(area_active)
+    )
+})
+
+data_expansion_mean <- reactive({
+  data_expansion() %>%
+    group_by(treatment, genotype, time) %>%
+    summarise(d_area=mean(d_area))
+})
+
+# compute mean relative expansion rate as mean(stress):mean(control)
+data_rer_mean <- reactive({
+  data_expansion_mean() %>% 
+    spread(treatment, d_area) %>% 
+    mutate(rer=stress/control)
+})
+
+# compute relative expansion rate as stress:mean(control) 
+data_rer <- reactive({
+  data_expansion() %>% 
+    filter(treatment == "stress") %>% 
+    select(treatment, genotype, plant_code, time, d_area) %>% 
+    spread(treatment, d_area) %>% 
+    left_join(data_rer_mean() %>% select(genotype, time, control)) %>% 
+    mutate(rer=stress/control)
+})
+
+# analyse expansion response as mean(RER)=f(mean(FTSW))
+data_response_expansion_mean <- reactive({
+  data_rer_mean() %>% 
+    left_join(
+      data_ftsw_mean() %>% ungroup() %>% 
+        filter(treatment=="stress") %>%
+        select(genotype, time, FTSW)
+    )
+})
+
+# analyse expansion response as RER=f(FTSW)
+data_response_expansion <- reactive({
+  data_rer() %>% 
+    left_join(data_ftsw_daily() %>% select(plant_code, time, FTSW))
+})
+
+# modeling expansion response : regression on stressed:mean(contron) ~ mean(FTSW)
+model_expansion <- function(data) nls(rer ~ curve_expansion(FTSW, a), data=data, start=list(a=-10), algorithm="default")
+
+data_model_expansion <- reactive({
+  data_response_expansion() %>% 
+  group_by(genotype) %>% 
+  nest() %>% 
+  mutate(
+    model=map(data, failwith(data.frame(NULL), model_expansion)),
+    prediction=map2(list_ftsw, model, failwith(data.frame(NULL), add_predictions)),
+    coefficients=map(model, failwith(data.frame(NULL), tidy, quiet=TRUE)),
+    rmse=map2(model, data, failwith(NULL, rmse))
+  )
+})
+
+
+```
+
+```{r data_computed_transpiration, include=FALSE}
+# compute plant transpiration rate
+data_transpiration <- reactive({
+  data_plant() %>% 
+    left_join(data_ftsw_daily() %>% select(plant_code, time, d_weight)) %>% 
+    group_by(plant_code) %>% 
+    mutate(tr=d_weight/area) 
+})
+
+# compute mean plant transpiration rate
+data_transpiration_mean <- reactive({
+  data_transpiration() %>%
+    group_by(treatment, genotype, time) %>%
+    summarise(d_weight=mean(d_weight), tr=mean(tr))
+})
+
+# compute mean relative transpiration rate as mean(stress):mean(control)
+data_rtr_mean <- reactive({
+  data_transpiration_mean() %>% 
+    select(-d_weight) %>% 
+    spread(treatment, tr) %>% 
+    mutate(rtr=stress/control)
+})
+
+# compute relative expansion rate as stress:mean(control)
+data_rtr <- reactive({
+  data_transpiration() %>% 
+    filter(treatment == "stress") %>% 
+    select(treatment, genotype, plant_code, time, tr) %>% 
+    spread(treatment, tr) %>% 
+    left_join(data_rtr_mean() %>% select(genotype, time, control)) %>% 
+    mutate(rtr=stress/control)
+})
+
+# analyse transpiration response as mean(RER)=f(mean(FTSW))
+data_response_transpiration_mean <- reactive({
+  data_rtr_mean() %>% 
+    left_join(
+      data_ftsw_mean() %>% ungroup() %>% 
+        filter(treatment=="stress") %>%
+        select(genotype, time, FTSW)
+    )
+})
+
+# analyse transpiration response as RER=f(FTSW)
+data_response_transpiration <- reactive({
+  data_rtr() %>% 
+    left_join(data_ftsw_daily() %>% select(plant_code, time, FTSW))
+})
+
+# modeling transpiration response : regression on stressed:mean(contron) ~ FTSW
+model_transpiration <- function(data) nls(rtr ~ curve_conductance(FTSW, a), data=data, start=list(a=-10), algorithm="default")
+
+# filter dataset for relative ratio between in ]0, 1.5[
+data_model_transpiration <- reactive({
+  data_response_transpiration() %>% 
+    filter(rtr < 1.5 & rtr > 0) %>% 
+    group_by(genotype) %>% 
+    nest() %>% 
+    mutate(
+      model=map(data, failwith(data.frame(NULL), model_transpiration)),
+      prediction=map2(list_ftsw, model, failwith(data.frame(NULL), add_predictions)),
+      coefficients=map(model, failwith(data.frame(NULL), tidy, quiet=TRUE)),
+      rmse=map2(model, data, failwith(NULL, rmse))
+    )
+})
+
+
+```
+
+```{r data_computed_parameters, include=FALSE}
+
+table_parameters <- reactive({
+  bind_rows(
+    left_join(
+      data_model_expansion() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="LE"),
+      data_model_expansion() %>% unnest(rmse, .drop=TRUE)
+    ),
+    left_join(
+      data_model_transpiration() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="TR"),
+      data_model_transpiration() %>% unnest(rmse, .drop=TRUE)
+    ) 
+  )
+})
 
 ```
 
@@ -516,7 +681,193 @@ renderPlotly({
 Expansion
 =====================================     
 
+Row  {.tabset}
+-------------------------------------
+
+### Rate
+```{r plot_expansion_rate}
+renderPlotly({
+  ggplotly(
+    data_expansion() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=time, y=d_area, color=treatment)) +
+      geom_point(data=data_expansion_mean() %>% filter(genotype == input$genotype), size=2) +
+      geom_point(aes(label=plant_code), size=1, alpha=0.5) +
+      geom_smooth(method="loess", se=FALSE) +
+      scale_treatment +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) + 
+      labs(y="Mean expansion rate (mm2.d-1)") +
+      theme(legend.position="none")
+  )
+})
+
+```
+
+
+### Relative
+```{r plot_expansion_relative}
+renderPlotly({
+  ggplotly(
+    data_rer() %>% 
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(time, rer, label=plant_code)) +
+      geom_point(alpha=0.5) +
+      geom_smooth() +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) +
+      labs(y="Relative expansion rate") 
+  )
+})
+
+```
+
+
+### Model
+```{r plot_expansion_model}
+renderPlotly({
+  ggplotly(
+    data_response_expansion() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=FTSW, y=rer)) +
+      geom_point(aes(label=plant_code), alpha=0.3, size=1) +
+      geom_point(
+        data=data_response_expansion_mean() %>%
+          filter(genotype == input$genotype),
+        size=2) +
+      geom_line(
+        data=data_model_expansion() %>%
+          filter(genotype == input$genotype) %>% 
+          unnest(prediction),
+        aes(x=FTSW, y=pred), color="#619CFF", size=1
+      ) +
+      coord_cartesian(xlim=c(0,1), ylim=c(0,1.5)) +
+      labs(y="Relative Expansion Rate")
+  )
+})
+```
+
+### Quality
+```{r plot_expansion_model_quality}
+renderPlotly({
+  ggplotly(
+    data_model_expansion() %>%
+      unnest(coefficients, .drop=TRUE) %>% 
+      ggplot(aes(x=reorder(genotype, p.value), y=p.value)) +
+      geom_point() + geom_hline(yintercept = 0.05) + 
+       labs(x=NULL, y="p-value")
+  )
+})
+```
+
+
 
 Transpiration
 =====================================     
+
+Row  {.tabset}
+-------------------------------------
+
+### Rate
+```{r plot_transpiration_rate}
+renderPlotly({
+  ggplotly(
+    data_transpiration() %>% 
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=time, y=tr*100, color=treatment)) +
+      geom_point(data=data_transpiration_mean() %>% filter(genotype == input$genotype), size=2) +
+      geom_point(aes(label=plant_code), size=1, alpha=0.5) +
+      geom_smooth(method="loess", se=FALSE) +
+      scale_treatment +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) +
+      labs(y="Transpiration rate (g.cm-2.d-1)") +
+      theme(legend.position="none")
+  )
+})
+```
+
+### Relative
+```{r plot_transpiration_relative}
+renderPlotly({
+  ggplotly(
+    data_rtr() %>% 
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(time, rtr, label=plant_code)) +
+      geom_point(alpha=0.5) +
+      geom_smooth(data= . %>% filter(rtr < 1.5 & rtr > 0)) +
+      coord_cartesian(ylim=c(0,1.5)) +
+      scale_x_datetime(
+        date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
+        limits=c(data_trial()$start, data_trial()$end)
+      ) +
+      labs(y="Relative transpiration rate") 
+  )
+})
+```
+
+### Model
+
+```{r plot_transpiration_model}
+renderPlotly({
+  ggplotly(
+    data_response_transpiration() %>%
+      filter(genotype == input$genotype) %>%
+      ggplot(aes(x=FTSW, y=rtr)) +
+      geom_point(aes(label=plant_code), alpha=0.3, size=1) +
+      geom_point(
+        data=data_response_transpiration_mean() %>%
+          filter(genotype == input$genotype),
+        size=2) +
+      geom_line(
+        data=data_model_transpiration() %>%
+          filter(genotype == input$genotype) %>% 
+          unnest(prediction),
+        aes(x=FTSW, y=pred), color="#619CFF", size=1
+      ) +
+      coord_cartesian(xlim=c(0,1), ylim=c(0,1.5)) +
+      labs(y="Relative Transpiration Rate")
+  )
+})
+```
+
+### Quality
+```{r plot_transpiration_model_quality}
+renderPlotly({
+  ggplotly(
+    data_model_transpiration() %>%
+      unnest(coefficients, .drop=TRUE) %>% 
+      ggplot(aes(x=reorder(genotype, p.value), y=p.value)) +
+      geom_point() + geom_hline(yintercept = 0.05) + 
+       labs(x=NULL, y="p-value")
+  )
+})
+```
+
+
+
+Data
+=====================================     
+
+Row  {.tabset}
+-------------------------------------
+
+
+### Parameters
+```{r table_response}
+
+renderDataTable(
+  table_parameters() %>% 
+    select(process, genotype, estimate, se=std.error, p.value, rmse) %>% 
+    arrange(process, -estimate),
+  options=list(pageLength=20)
+)
+
+```
 
