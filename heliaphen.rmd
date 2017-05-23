@@ -76,7 +76,7 @@ data_ftsw <- reactive({
       date_start=data_trial()$start,
       date_end=data_trial()$end,
       weight_dead=data_trial()$weight_dead,
-      awc=0.39,
+      awc=input$threshold_awc,
       timing="measure"
     ) 
 })
@@ -88,7 +88,7 @@ data_ftsw_daily <- reactive({
       date_start=data_trial()$start,
       date_end=data_trial()$end,
       weight_dead=data_trial()$weight_dead,
-      awc=0.39,
+      awc=input$threshold_awc,
       timing="daily"
     ) 
 })
@@ -266,6 +266,26 @@ data_model_transpiration <- reactive({
 
 ```
 
+```{r data_computed_roots, include=FALSE}
+
+# compute soil water capacity using a relative transpiration threshold as lower limit for soil transpirable water. 
+data_awc <- reactive({
+  data_rtr() %>% 
+    filter(rtr > 0.05 & rtr <= 0.15) %>% 
+    distinct(plant_code, .keep_all=TRUE) %>% 
+    left_join(data_ftsw_daily() %>% select(plant_code, time, weight)) %>% 
+    left_join(data_weight() %>% distinct(plant_code, weight_0)) %>% 
+    mutate(
+      TTSW = weight_0 - weight,
+      awc = TTSW/weight_0
+    )
+})
+
+data_awc_mean <- reactive({ data_awc() %>% ungroup() %>% summarise(sd=sd(awc), awc=mean(awc)) })
+
+```
+
+
 ```{r data_computed_parameters, include=FALSE}
 
 table_parameters <- reactive({
@@ -308,23 +328,6 @@ renderUI({
 ```
 
 ----------
-### Harvest
-
-```{r inputs_harvest}
-# shiny input for planning date selection
-renderUI({
-  dateRangeInput('date', label='Dates', start=data_trial()$start, end=data_trial()$end)
-})
-  
-# shiny input for filtering threshold
-renderUI({
-  sliderInput("threshold_ftsw", label="Threshold", min=0, max=1, value=0.1)
-})
-
-
-```
-
-----------
 ### Import
 
 ```{r inputs_import}
@@ -350,6 +353,36 @@ observeEvent(input$write, {
 
 
 ```
+
+----------
+### Harvest
+
+```{r inputs_harvest}
+# shiny input for planning date selection
+renderUI({
+  dateRangeInput('date', label='Dates', start=data_trial()$start, end=data_trial()$end)
+})
+  
+# shiny input for filtering threshold
+renderUI({
+  sliderInput("threshold_ftsw", label="FTSW Threshold", min=0, max=1, value=0.1)
+})
+
+
+```
+
+----------
+### Model
+
+```{r inputs_model}
+
+# shiny input for ttsw estimation
+renderUI({
+  sliderInput("threshold_awc", label="Soil water capacity", min=0, max=1, value=0.61)
+})
+
+```
+
 
 ----------
 ### Export
@@ -846,6 +879,27 @@ renderPlotly({
       ggplot(aes(x=reorder(genotype, p.value), y=p.value)) +
       geom_point() + geom_hline(yintercept = 0.05) + 
        labs(x=NULL, y="p-value")
+  )
+})
+```
+
+
+
+Roots
+=====================================     
+
+Row  {.tabset}
+-------------------------------------
+
+### Extraction
+```{r plot_root_extraction}
+renderPlotly({
+  ggplotly(
+    data_awc() %>% 
+      mutate(awc=awc*100) %>% 
+      ggplot(aes(x=genotype, y=awc, label=plant_code)) +
+      geom_point(alpha=0.5) + 
+      labs(x=NULL, y="Available soil water (%)") 
   )
 })
 ```
