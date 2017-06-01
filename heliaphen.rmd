@@ -288,6 +288,7 @@ data_awc_mean <- reactive({ data_awc() %>% ungroup() %>% summarise(sd=sd(awc), a
 
 ```{r data_computed_parameters, include=FALSE}
 
+# gather estimated parameters
 table_parameters <- reactive({
   bind_rows(
     left_join(
@@ -301,6 +302,19 @@ table_parameters <- reactive({
   )
 })
 
+# summary table for modeling error 
+table_error <- reactive({
+  table_parameters() %>%
+    group_by(process) %>% 
+    summarise(
+      n_genotype=n(),
+      n_sign=sum(p.value < 0.01),
+      n_low=sum(std.error < 2),
+      estimate=mean(estimate, na.rm=TRUE),
+      rmse=mean(rmse, na.rm=TRUE),
+      se=mean(std.error, na.rm=TRUE)
+    )
+})
 ```
 
 
@@ -899,6 +913,7 @@ renderPlotly({
       mutate(awc=awc*100) %>% 
       ggplot(aes(x=genotype, y=awc, label=plant_code)) +
       geom_point(alpha=0.5) + 
+      geom_hline(aes(yintercept=data_awc_mean()$awc*100)) +
       labs(x=NULL, y="Available soil water (%)") 
   )
 })
@@ -921,6 +936,15 @@ renderDataTable(
     select(process, genotype, estimate, se=std.error, p.value, rmse) %>% 
     arrange(process, -estimate),
   options=list(pageLength=20)
+)
+
+```
+
+### Quality
+```{r table_error}
+
+renderDataTable(
+  table_error() 
 )
 
 ```
