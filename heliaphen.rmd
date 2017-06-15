@@ -403,7 +403,7 @@ renderUI({
 
 ```{r inputs_export}
 
-# setup data download
+# export leaf area notation file
 output$table_download_area <- downloadHandler(
   file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_area.csv"), 
   content = function(file) {
@@ -414,7 +414,8 @@ output$table_download_area <- downloadHandler(
 renderUI({
   downloadLink('table_download_area', label = 'Download (leaf area)')  
 })
-  
+
+# export architecture notation files  
 output$table_download_architecture <- downloadHandler(
   file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_architecture.csv"), 
   content = function(file) {
@@ -425,6 +426,19 @@ output$table_download_architecture <- downloadHandler(
 renderUI({
   downloadLink('table_download_architecture', label = 'Download (architecture)')
 })
+
+# export water deficit status file
+output$table_download_ftsw <- downloadHandler(
+  file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_ftsw.csv"), 
+  content = function(file) {
+    write_csv(data_ftsw(), file, na="")
+  }
+)
+
+renderUI({
+  downloadLink('table_download_ftsw', label = 'Download (water deficit)')
+})
+
 
 ```
 
@@ -447,7 +461,7 @@ renderPlotly({
       geom_tile(aes(fill=genotype), alpha=0.5) +
       geom_point(aes(shape=treatment), size=5, alpha=0.5) +
       scale_shape_manual(values=c(19, 1), guide = "none") +
-      labs(x=NULL, y=NULL) + coord_equal() +
+      labs(x=NULL, y=NULL) + 
       theme(legend.position="none"),
     tooltip=c("x","y","label", "shape")
   )
