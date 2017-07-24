@@ -142,7 +142,7 @@ data_expansion <- reactive({
 data_expansion_mean <- reactive({
   data_expansion() %>%
     group_by(treatment, genotype, time) %>%
-    summarise(d_area=mean(d_area))
+    summarise(d_area=mean(d_area, na.rm=TRUE))
 })
 
 # compute mean relative expansion rate as mean(stress):mean(control)
@@ -209,7 +209,7 @@ data_transpiration <- reactive({
 data_transpiration_mean <- reactive({
   data_transpiration() %>%
     group_by(treatment, genotype, time) %>%
-    summarise(d_weight=mean(d_weight), tr=mean(tr))
+    summarise_at(vars(d_weight, tr), mean, na.rm=TRUE)
 })
 
 # compute mean relative transpiration rate as mean(stress):mean(control)
