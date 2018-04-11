@@ -186,10 +186,10 @@ data_model_expansion <- reactive({
   group_by(genotype) %>% 
   nest() %>% 
   mutate(
-    model=map(data, failwith(data.frame(NULL), model_expansion)),
-    prediction=map2(list_ftsw, model, failwith(data.frame(NULL), add_predictions)),
-    coefficients=map(model, failwith(data.frame(NULL), tidy, quiet=TRUE)),
-    rmse=map2(model, data, failwith(NULL, rmse))
+    model=map(data, possibly(model_expansion, data.frame(NULL))),
+    prediction=map2(list_ftsw, model, possibly(add_predictions, data.frame(NULL))),
+    coefficients=map(model, possibly(tidy, data.frame(NULL))),
+    rmse=map2(model, data, possibly(rmse, NULL))
   )
 })
 
@@ -256,10 +256,10 @@ data_model_transpiration <- reactive({
     group_by(genotype) %>% 
     nest() %>% 
     mutate(
-      model=map(data, failwith(data.frame(NULL), model_transpiration)),
-      prediction=map2(list_ftsw, model, failwith(data.frame(NULL), add_predictions)),
-      coefficients=map(model, failwith(data.frame(NULL), tidy, quiet=TRUE)),
-      rmse=map2(model, data, failwith(NULL, rmse))
+      model=map(data, possibly(model_transpiration, data.frame(NULL))),
+    prediction=map2(list_ftsw, model, possibly(add_predictions, data.frame(NULL))),
+    coefficients=map(model, possibly(tidy, data.frame(NULL))),
+    rmse=map2(model, data, possibly(rmse, NULL))
     )
 })
 
@@ -437,6 +437,19 @@ output$table_download_ftsw <- downloadHandler(
 
 renderUI({
   downloadLink('table_download_ftsw', label = 'Download (water deficit)')
+})
+
+
+# export response parameters file
+output$table_download_response <- downloadHandler(
+  file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_response.csv"), 
+  content = function(file) {
+    write_csv(table_parameters(), file, na="")
+  }
+)
+
+renderUI({
+  downloadLink('table_download_response', label = 'Download (response traits)')
 })
 
 
@@ -846,7 +859,7 @@ renderPlotly({
     data_response_expansion() %>%
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=FTSW, y=rer)) +
-      geom_point(aes(label=plant_code), alpha=0.3, size=1) +
+      geom_point(alpha=0.3, size=1) +
       geom_point(
         data=data_response_expansion_mean() %>%
           filter(genotype == input$genotype),
@@ -945,7 +958,7 @@ renderPlotly({
     data_response_transpiration() %>%
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=FTSW, y=rtr)) +
-      geom_point(aes(label=plant_code), alpha=0.3, size=1) +
+      geom_point(alpha=0.3, size=1) +
       geom_point(
         data=data_response_transpiration_mean() %>%
           filter(genotype == input$genotype),
