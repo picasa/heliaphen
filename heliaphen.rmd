@@ -515,7 +515,13 @@ renderPlotly({
   ggplotly(
     data_weight() %>%
       mutate(cultivar=interaction(genotype, treatment, sep=" - ")) %>% 
-      ggplot(aes(x=time, y=weight, color=treatment, group=cultivar, label=plant_code)) +
+      ggplot(aes(x=time, y=weight, color=treatment, group=cultivar, 
+                 text=paste(
+                 "date: ", time,
+                 "<br>weight: ", weight,
+                 "<br>plant_code: ", plant_code,
+                 "<br>cultivar: ", genotype
+                 ))) +
       geom_point(alpha=0.3) +
       geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
       geom_hline(aes(yintercept=0.1), linetype=2) +  
@@ -525,7 +531,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + ylim(3500, 12000) +
       theme(legend.position="none"),
-    tooltip=c("x","y","label","group")
+    tooltip=c("text")
   )
 })
 
@@ -539,7 +545,12 @@ renderPlotly({
   ggplotly(
     data_weight() %>%
       filter(genotype == input$genotype) %>%
-      ggplot(aes(x=time, y=weight, color=treatment, group=plant_code, label=plant_code)) +
+      ggplot(aes(x=time, y=weight, color=treatment, group=plant_code, 
+                 text=paste(
+                 "date: ", time,
+                 "<br>weight: ", weight,
+                 "<br>plant_code: ", plant_code
+                 ))) +
       geom_line() +
       geom_hline(aes(yintercept=0.1), linetype=2) +
       scale_color_manual(values=c("#619CFF","#F8766D")) +
@@ -548,7 +559,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + ylim(3500, 12000) +
       theme(legend.position="none"),
-    tooltip=c("x","y","label")
+    tooltip=c("text")
   )
 })
 
@@ -570,7 +581,13 @@ renderPlotly({
   ggplotly(
     data_ftsw() %>%
       mutate(cultivar=interaction(genotype, treatment, sep=" - ")) %>% 
-      ggplot(aes(x=time, y=FTSW, color=treatment, group=cultivar, label=plant_code)) +
+      ggplot(aes(x=time, y=FTSW, color=treatment, group=cultivar, 
+                 text=paste(
+                 "date: ", time,
+                 "<br>FTSW: ", FTSW,
+                 "<br>plant_code: ", plant_code,
+                 "<br>cultivar: ", genotype
+                 ))) +
       geom_point(alpha=0.3) +
       geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
       geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +  
@@ -580,7 +597,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + ylim(0, 1.2) +
       theme(legend.position="none"),
-    tooltip=c("x","y","label","group")
+    tooltip=c("text")
   )
 })
 
@@ -594,7 +611,12 @@ renderPlotly({
   ggplotly(
     data_ftsw() %>%
       filter(genotype == input$genotype) %>%
-      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code, label=plant_code)) +
+      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code,
+                 text=paste(
+                 "date: ", time,
+                 "<br>FTSW: ", FTSW,
+                 "<br>plant_code: ", plant_code
+                 ))) +
       geom_line() +
       geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
       scale_color_manual(values=c("#619CFF","#F8766D")) +
@@ -603,7 +625,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + ylim(0, 1.2) +
       theme(legend.position="none"),
-    tooltip=c("x","y","label")
+    tooltip=c("text")
   )
 })
 
@@ -617,7 +639,12 @@ renderPlotly({
   ggplotly(
     data_ftsw_daily() %>%
       filter(genotype == input$genotype) %>%
-      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code, label=plant_code)) +
+      ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code,
+                 text=paste(
+                 "date: ", time,
+                 "<br>FTSW: ", FTSW,
+                 "<br>plant_code: ", plant_code
+                 ))) +
       geom_line() +
       geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +
       scale_color_manual(values=c("#619CFF","#F8766D")) +
@@ -626,7 +653,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + ylim(0, 1.2) +
       theme(legend.position="none"),
-    tooltip=c("x","y","label")
+    tooltip=c("text")
   )
 })
 
@@ -693,7 +720,12 @@ renderPlotly({
     data_area() %>% 
       filter(genotype %in% input$genotype) %>% 
       mutate(area=area/100) %>% 
-      ggplot(aes(x=time, y=area, color=leaf, group=leaf, label=leaf)) +
+      ggplot(aes(x=time, y=area, color=leaf, group=leaf,
+                 text=paste(
+                 "date: ", time,
+                 "<br>area: ", area,
+                 "<br>leaf: ", leaf
+                 ))) +
       geom_path() +
       geom_point(
         data=data_area_raw() %>%
@@ -707,7 +739,7 @@ renderPlotly({
         date_breaks="2 day", labels=date_format("%d", tz="Europe/Paris")
       ) +
       labs(x="Time", y="Leaf area (cm2)") + theme(legend.position="none"),
-    tooltip=c("x","y","label")
+    tooltip=c("text")
   )
 })
 
@@ -722,7 +754,12 @@ renderPlotly({
       filter(genotype == input$genotype) %>%
       gather(method, area, area:area_active) %>% 
       mutate(area=area/1e6) %>% 
-      ggplot(aes(x=time, y=area, color=treatment, label=plant_code)) +
+      ggplot(aes(x=time, y=area, color=treatment,
+                 text=paste(
+                 "date: ", time,
+                 "<br>area: ", area,
+                 "<br>plant_code: ", plant_code
+                 ))) +
       geom_point(data=. %>% filter(method=="area"), alpha=0.5) +
       geom_smooth(aes(linetype=method), method="loess", se=FALSE) +
       scale_treatment +
@@ -732,7 +769,7 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + 
       theme(legend.position="none"),
-    tooltip=c("x","y","label")
+    tooltip=c("text")
   )
 })
 
@@ -755,7 +792,11 @@ renderPlotly({
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=time, y=d_area, color=treatment)) +
       geom_point(data=data_expansion_mean() %>% filter(genotype == input$genotype), size=2) +
-      geom_point(aes(label=plant_code), size=1, alpha=0.5) +
+      geom_point(aes(text=paste(
+        "date: ", time,
+        "<br>expansion: ", d_area,
+        "<br>plant_code: ", plant_code
+      )), size=1, alpha=0.5) +
       geom_smooth(method="loess", se=FALSE) +
       scale_treatment +
       scale_x_datetime(
@@ -763,7 +804,8 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) + 
       labs(y="Mean expansion rate (mm2.d-1)") +
-      theme(legend.position="none")
+      theme(legend.position="none"),
+    tooltip=c("text")
   )
 })
 
@@ -776,14 +818,21 @@ renderPlotly({
   ggplotly(
     data_rer() %>% 
       filter(genotype == input$genotype) %>%
-      ggplot(aes(time, rer, label=plant_code)) +
-      geom_point(alpha=0.5) +
+      ggplot(aes(time, rer)) +
+      geom_point(aes(
+        text=paste(
+          "date: ", time,
+          "<br>rer: ", rer,
+          "<br>plant_code: ", plant_code
+        )
+      ), alpha=0.5) +
       geom_smooth() +
       scale_x_datetime(
         date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
         limits=c(data_trial()$start, data_trial()$end)
       ) +
-      labs(y="Relative expansion rate") 
+      labs(y="Relative expansion rate"),
+    tooltip=c("text")
   )
 })
 
@@ -843,7 +892,12 @@ renderPlotly({
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=time, y=tr*100, color=treatment)) +
       geom_point(data=data_transpiration_mean() %>% filter(genotype == input$genotype), size=2) +
-      geom_point(aes(label=plant_code), size=1, alpha=0.5) +
+      geom_point(
+        aes(text=paste(
+        "date: ", time,
+        "<br>transpiration: ", tr*100,
+        "<br>plant_code: ", plant_code
+      )), size=1, alpha=0.5) +
       geom_smooth(method="loess", se=FALSE) +
       scale_treatment +
       scale_x_datetime(
@@ -851,7 +905,8 @@ renderPlotly({
         limits=c(data_trial()$start, data_trial()$end)
       ) +
       labs(y="Transpiration rate (g.cm-2.d-1)") +
-      theme(legend.position="none")
+      theme(legend.position="none"),
+    tooltip=c("text")
   )
 })
 ```
@@ -862,15 +917,22 @@ renderPlotly({
   ggplotly(
     data_rtr() %>% 
       filter(genotype == input$genotype) %>%
-      ggplot(aes(time, rtr, label=plant_code)) +
-      geom_point(alpha=0.5) +
+      ggplot(aes(time, rtr)) +
+      geom_point(aes(
+        text=paste(
+          "date: ", time,
+          "<br>rtr: ", rtr,
+          "<br>plant_code: ", plant_code
+        )
+      ), alpha=0.5) +
       geom_smooth(data= . %>% filter(rtr < 1.5 & rtr > 0)) +
       coord_cartesian(ylim=c(0,1.5)) +
       scale_x_datetime(
         date_breaks="1 day", labels=date_format("%d", tz="Europe/Paris"),
         limits=c(data_trial()$start, data_trial()$end)
       ) +
-      labs(y="Relative transpiration rate") 
+      labs(y="Relative transpiration rate"),
+     tooltip=c("text")
   )
 })
 ```
