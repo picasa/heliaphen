@@ -289,17 +289,24 @@ data_awc_mean <- reactive({ data_awc() %>% ungroup() %>% summarise(sd=sd(awc), a
 ```{r data_computed_parameters, include=FALSE}
 
 # gather estimated parameters
-table_parameters <- reactive({
+data_parameters <- reactive({
   bind_rows(
     left_join(
-      data_model_expansion() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="LE"),
+      data_model_expansion() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="expansion"),
       data_model_expansion() %>% unnest(rmse, .drop=TRUE)
     ),
     left_join(
-      data_model_transpiration() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="TR"),
+      data_model_transpiration() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="transpiration"),
       data_model_transpiration() %>% unnest(rmse, .drop=TRUE)
     ) 
-  )
+  ) 
+})
+
+table_parameters <- reactive({
+  data_parameters() %>% 
+    mutate(trial_id=input$experiment) %>% 
+    select(trial_id, process, genotype, estimate, se=std.error, p.value, rmse) %>% 
+    arrange(process, -estimate)
 })
 
 # summary table for modeling error 
@@ -1023,10 +1030,7 @@ Row  {.tabset}
 ```{r table_response}
 
 renderDataTable(
-  table_parameters() %>% 
-    select(process, genotype, estimate, se=std.error, p.value, rmse) %>% 
-    arrange(process, -estimate),
-  options=list(pageLength=20)
+  table_parameters()
 )
 
 ```
