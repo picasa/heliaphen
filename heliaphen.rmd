@@ -23,7 +23,7 @@ library(shiny)
 
 # options
 theme_set(theme_bw())
-lim_area <- c(0, 350)
+lim_area <- c(0, 400)
 scale_treatment <- scale_colour_manual(values = c("control"="#619CFF","stress"="#F8766D"))
 list_ftsw <- list(data_frame(FTSW=seq(0,1,0.05)))
 
@@ -70,7 +70,7 @@ data_area <- reactive({
 
 ```{r data_computed_water, include=FALSE}
 # compute soil water deficit as a function of pot weight and available water content
-data_ftsw <- reactive({
+data_water <- reactive({
   data_weight() %>%
     soil_water_deficit(
       date_start=data_trial()$start,
@@ -82,7 +82,7 @@ data_ftsw <- reactive({
 })
 
 # compute interpolated soil water deficit
-data_ftsw_daily <- reactive({
+data_water_daily <- reactive({
   data_weight() %>%
     soil_water_deficit(
       date_start=data_trial()$start,
@@ -94,15 +94,15 @@ data_ftsw_daily <- reactive({
 })
 
 # compute mean soil water deficit per genotype
-data_ftsw_mean <- reactive({
-  data_ftsw_daily() %>% 
+data_water_mean <- reactive({
+  data_water_daily() %>% 
     group_by(treatment, genotype, time) %>% 
-    summarise(FTSW=mean(FTSW), d_weight=mean(d_weight)) 
+    summarise(FTSW=mean(FTSW), water_loss=mean(water_loss, na.rm=TRUE)) 
 })
 
 # table for stressed plant below defined water deficit threshold
 table_harvest <- reactive({
-  data_ftsw() %>%
+  data_water() %>%
     plant_harvest(
       date_start=ymd(as.character(input$date[1]), tz="Europe/Paris"),
       date_end=ymd(as.character(input$date[2]), tz="Europe/Paris"),
@@ -134,8 +134,8 @@ data_expansion <- reactive({
   data_plant() %>% 
     group_by(plant_code) %>% 
     mutate(
-      d_area= area - lag(area),
-      d_area_active= area_active - lag(area_active)
+      d_area = area - lag(area),
+      d_area_active = area_active - lag(area_active)
     )
 })
 
@@ -166,7 +166,7 @@ data_rer <- reactive({
 data_response_expansion_mean <- reactive({
   data_rer_mean() %>% 
     left_join(
-      data_ftsw_mean() %>% ungroup() %>% 
+      data_water_mean() %>% ungroup() %>% 
         filter(treatment=="stress") %>%
         select(genotype, time, FTSW)
     )
@@ -175,7 +175,7 @@ data_response_expansion_mean <- reactive({
 # analyse expansion response as RER=f(FTSW)
 data_response_expansion <- reactive({
   data_rer() %>% 
-    left_join(data_ftsw_daily() %>% select(plant_code, time, FTSW))
+    left_join(data_water_daily() %>% select(plant_code, time, FTSW))
 })
 
 # modeling expansion response : regression on stressed:mean(contron) ~ mean(FTSW)
@@ -183,13 +183,14 @@ model_expansion <- function(data) nls(rer ~ curve_expansion(FTSW, a), data=data,
 
 data_model_expansion <- reactive({
   data_response_expansion() %>% 
+  filter(rer >= 0, rer <= 1.5) %>% 
   group_by(genotype) %>% 
   nest() %>% 
   mutate(
-    model=map(data, possibly(model_expansion, data.frame(NULL))),
-    prediction=map2(list_ftsw, model, possibly(add_predictions, data.frame(NULL))),
-    coefficients=map(model, possibly(tidy, data.frame(NULL))),
-    rmse=map2(model, data, possibly(rmse, NULL))
+    model=map(data, possibly(model_expansion, NULL)),
+    prediction=map2(list_ftsw, model, possibly(add_predictions, as.tibble(NULL))),
+    coefficients=map(model, possibly(tidy, NULL)),
+    rmse=map2(model, data, possibly(rmse, NA))
   )
 })
 
@@ -200,22 +201,22 @@ data_model_expansion <- reactive({
 # compute plant transpiration rate
 data_transpiration <- reactive({
   data_plant() %>% 
-    left_join(data_ftsw_daily() %>% select(plant_code, time, d_weight)) %>% 
+    left_join(data_water_daily() %>% select(plant_code, time, water_loss)) %>% 
     group_by(plant_code) %>% 
-    mutate(tr=d_weight/area) 
+    mutate(tr=water_loss/area) 
 })
 
 # compute mean plant transpiration rate
 data_transpiration_mean <- reactive({
   data_transpiration() %>%
     group_by(treatment, genotype, time) %>%
-    summarise_at(vars(d_weight, tr), mean, na.rm=TRUE)
+    summarise_at(vars(water_loss, tr), mean, na.rm=TRUE)
 })
 
 # compute mean relative transpiration rate as mean(stress):mean(control)
 data_rtr_mean <- reactive({
   data_transpiration_mean() %>% 
-    select(-d_weight) %>% 
+    select(-water_loss) %>% 
     spread(treatment, tr) %>% 
     mutate(rtr=stress/control)
 })
@@ -234,7 +235,7 @@ data_rtr <- reactive({
 data_response_transpiration_mean <- reactive({
   data_rtr_mean() %>% 
     left_join(
-      data_ftsw_mean() %>% ungroup() %>% 
+      data_water_mean() %>% ungroup() %>% 
         filter(treatment=="stress") %>%
         select(genotype, time, FTSW)
     )
@@ -243,7 +244,7 @@ data_response_transpiration_mean <- reactive({
 # analyse transpiration response as RER=f(FTSW)
 data_response_transpiration <- reactive({
   data_rtr() %>% 
-    left_join(data_ftsw_daily() %>% select(plant_code, time, FTSW))
+    left_join(data_water_daily() %>% select(plant_code, time, FTSW))
 })
 
 # modeling transpiration response : regression on stressed:mean(contron) ~ FTSW
@@ -252,14 +253,14 @@ model_transpiration <- function(data) nls(rtr ~ curve_conductance(FTSW, a), data
 # filter dataset for relative ratio between in ]0, 1.5[
 data_model_transpiration <- reactive({
   data_response_transpiration() %>% 
-    filter(rtr < 1.5 & rtr > 0) %>% 
+    filter(rtr >= 0 & rtr <= 1.5) %>% 
     group_by(genotype) %>% 
     nest() %>% 
     mutate(
-      model=map(data, possibly(model_transpiration, data.frame(NULL))),
-    prediction=map2(list_ftsw, model, possibly(add_predictions, data.frame(NULL))),
-    coefficients=map(model, possibly(tidy, data.frame(NULL))),
-    rmse=map2(model, data, possibly(rmse, NULL))
+      model=map(data, possibly(model_transpiration, NULL)),
+      prediction=map2(list_ftsw, model, possibly(add_predictions, as.tibble(NULL))),
+      coefficients=map(model, possibly(tidy, NULL)),
+      rmse=map2(model, data, possibly(rmse, NA))
     )
 })
 
@@ -273,7 +274,7 @@ data_awc <- reactive({
   data_rtr() %>% 
     filter(rtr > 0.05 & rtr <= 0.15) %>% 
     distinct(plant_code, .keep_all=TRUE) %>% 
-    left_join(data_ftsw_daily() %>% select(plant_code, time, weight)) %>% 
+    left_join(data_water_daily() %>% select(plant_code, time, weight)) %>% 
     left_join(data_weight() %>% distinct(plant_code, weight_0)) %>% 
     mutate(
       TTSW = weight_0 - weight,
@@ -438,7 +439,7 @@ renderUI({
 output$table_download_ftsw <- downloadHandler(
   file = paste0(input$experiment, "_", format(Sys.Date(), "%Y%m%d"),"_ftsw.csv"), 
   content = function(file) {
-    write_csv(data_ftsw(), file, na="")
+    write_csv(data_water(), file, na="")
   }
 )
 
@@ -599,7 +600,7 @@ Row  {.tabset}
 
 renderPlotly({
   ggplotly(
-    data_ftsw() %>%
+    data_water() %>%
       mutate(cultivar=interaction(genotype, treatment, sep=" - ")) %>% 
       ggplot(aes(x=time, y=FTSW, color=treatment, group=cultivar, 
                  text=paste(
@@ -629,7 +630,7 @@ renderPlotly({
 
 renderPlotly({
   ggplotly(
-    data_ftsw() %>%
+    data_water() %>%
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code,
                  text=paste(
@@ -657,7 +658,7 @@ renderPlotly({
 
 renderPlotly({
   ggplotly(
-    data_ftsw_daily() %>%
+    data_water_daily() %>%
       filter(genotype == input$genotype) %>%
       ggplot(aes(x=time, y=FTSW, color=treatment, group=plant_code,
                  text=paste(
@@ -684,7 +685,7 @@ renderPlotly({
 
 # TODO : add filter for selected dates 
 renderDataTable(
-  data_ftsw() %>%
+  data_water() %>%
     filter(
       time >= ymd(as.character(input$date[1]), tz="Europe/Paris"),
       time < ymd(as.character(input$date[2]), tz="Europe/Paris")
