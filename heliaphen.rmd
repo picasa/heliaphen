@@ -97,7 +97,7 @@ data_water_daily <- reactive({
 data_water_mean <- reactive({
   data_water_daily() %>% 
     group_by(treatment, genotype, time) %>% 
-    summarise(FTSW=mean(FTSW), water_loss=mean(water_loss, na.rm=TRUE)) 
+    summarise(FTSW=mean(FTSW, na.rm=TRUE), water_loss=mean(water_loss, na.rm=TRUE)) 
 })
 
 # table for stressed plant below defined water deficit threshold
@@ -271,18 +271,20 @@ data_model_transpiration <- reactive({
 
 # compute soil water capacity using a relative transpiration threshold as lower limit for soil transpirable water. 
 data_awc <- reactive({
-  data_rtr() %>% 
-    filter(rtr > 0.05 & rtr <= 0.15) %>% 
-    distinct(plant_code, .keep_all=TRUE) %>% 
-    left_join(data_water_daily() %>% select(plant_code, time, weight)) %>% 
-    left_join(data_weight() %>% distinct(plant_code, weight_0)) %>% 
-    mutate(
-      TTSW = weight_0 - weight,
-      awc = TTSW/weight_0
+data_rtr() %>% 
+  filter(rtr > 0.05 & rtr <= 0.15) %>% 
+  distinct(plant_code, .keep_all=TRUE) %>% 
+  left_join(data_water_daily() %>% select(plant_code, time, weight_soil_t)) %>% 
+  left_join(data_water() %>% distinct(plant_code, weight_soil_0)) %>% 
+  mutate(
+    TTSW = weight_soil_0 - weight_soil_t,
+    awc = TTSW/weight_soil_0
     )
 })
 
-data_awc_mean <- reactive({ data_awc() %>% ungroup() %>% summarise(sd=sd(awc), awc=mean(awc)) })
+data_awc_mean <- reactive({
+  data_awc() %>% ungroup() %>% summarise(sd=sd(awc), awc=mean(awc))
+})
 
 ```
 
@@ -290,18 +292,32 @@ data_awc_mean <- reactive({ data_awc() %>% ungroup() %>% summarise(sd=sd(awc), a
 ```{r data_computed_parameters, include=FALSE}
 
 # gather estimated parameters
+# data_parameters <- reactive({
+#   bind_rows(
+#     left_join(
+#       data_model_expansion() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="expansion"),
+#       data_model_expansion() %>% unnest(rmse, .drop=TRUE)
+#     ),
+#     left_join(
+#       data_model_transpiration() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="transpiration"),
+#       data_model_transpiration() %>% unnest(rmse, .drop=TRUE)
+#     ) 
+#   ) 
+# })
+
 data_parameters <- reactive({
   bind_rows(
-    left_join(
-      data_model_expansion() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="expansion"),
-      data_model_expansion() %>% unnest(rmse, .drop=TRUE)
-    ),
-    left_join(
-      data_model_transpiration() %>% unnest(coefficients, .drop=TRUE) %>% mutate(process="transpiration"),
-      data_model_transpiration() %>% unnest(rmse, .drop=TRUE)
-    ) 
-  ) 
+    data_model_expansion() %>%
+      select(-c(data:prediction)) %>%
+      unnest(c(coefficients, rmse)) %>%
+      mutate(process="expansion"),
+    data_model_transpiration() %>%
+      select(-c(data:prediction)) %>%
+      unnest(c(coefficients, rmse)) %>%
+      mutate(process="transpiration")
+  )
 })
+
 
 table_parameters <- reactive({
   data_parameters() %>% 
@@ -317,10 +333,10 @@ table_error <- reactive({
     summarise(
       n_genotype=n(),
       n_sign=sum(p.value < 0.01),
-      n_low=sum(std.error < 2),
+      n_low=sum(se < 2),
       estimate=mean(estimate, na.rm=TRUE),
       rmse=mean(rmse, na.rm=TRUE),
-      se=mean(std.error, na.rm=TRUE)
+      se=mean(se, na.rm=TRUE)
     )
 })
 ```
