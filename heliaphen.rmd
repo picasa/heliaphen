@@ -23,9 +23,12 @@ library(shiny)
 
 # options
 theme_set(theme_bw())
+
 lim_area <- c(0, 400)
+
 scale_treatment <- scale_colour_manual(values = c("control"="#619CFF","stress"="#F8766D"))
-list_ftsw <- list(data_frame(FTSW=seq(0,1,0.05)))
+
+list_ftsw <- list(tibble(FTSW=seq(0,1,0.05)))
 
 ```
 
@@ -113,18 +116,54 @@ table_harvest <- reactive({
 ```
 
 ```{r data_computed_plant, include=FALSE}
-# compute plant leaf area as the sum of individual leaf area
-data_plant <- reactive({
-  data_area() %>%
-    mutate(area_active=ifelse(senescence==0, area, 0)) %>% 
-    group_by(plant_code, time) %>%
-    summarise(
-      area=sum(area),
-      area_active=sum(area_active),
-      senescence=sum(senescence)
-    ) %>% 
-    left_join(data_index())
+
+# load leaf area prediction model
+model_global <- reactive({
+  read_rds(
+    glue::glue("data/{input$experiment}/model/model_area_global.rds"))
 })
+
+
+# compute plant leaf area as the sum of individual leaf area
+# data_plant <- reactive({
+#   data_area() %>%
+#     mutate(area_active=ifelse(senescence==0, area, 0)) %>%
+#     group_by(plant_code, time) %>%
+#     summarise(
+#       area=sum(area),
+#       area_active=sum(area_active),
+#       senescence=sum(senescence)
+#     ) %>%
+#     left_join(data_index())
+# })
+
+
+data_plant <- reactive({
+  switch(
+    input$method_area,
+
+    manual = {
+      data_area() %>%
+        mutate(area_active=ifelse(senescence==0, area, 0)) %>%
+        group_by(plant_code, time) %>%
+        summarise(
+          area=sum(area),
+          area_active=sum(area_active),
+          senescence=sum(senescence)
+        ) %>%
+        left_join(data_index())
+    },
+
+    model = {
+      area_predict(
+        experiment = input$experiment, index = data_index(), model = model_global())
+    },
+
+    stop("Invalid `method` value")
+
+  )
+})
+
 
 ```
 
@@ -133,10 +172,7 @@ data_plant <- reactive({
 data_expansion <- reactive({
   data_plant() %>% 
     group_by(plant_code) %>% 
-    mutate(
-      d_area = area - lag(area),
-      d_area_active = area_active - lag(area_active)
-    )
+    mutate(d_area = area - lag(area))
 })
 
 data_expansion_mean <- reactive({
@@ -346,6 +382,7 @@ Sidebar {.sidebar}
 =====================================
 
 ----------
+
 ### Selection
 
 ```{r inputs_design}
@@ -365,34 +402,9 @@ renderUI({
 
 ```
 
-----------
-### Import
-
-```{r inputs_import}
-# import raw files
-
-renderUI({
-  actionLink("import", "Import (raw files)")  
-})
-
-table_import <- eventReactive(input$import, {
-  soil_weight(experiment=input$experiment, index=data_index(), date_start=data_trial()$start)
-})
-
-
-# write processed raw files for analysis
-renderUI({
-  actionLink("write", "Write (weight)")  
-})
-
-observeEvent(input$write, {
-  write_rds(table_import(), paste0("data/",input$experiment,"/",input$experiment,"_weight.rds"), compress="bz2")  
-})
-
-
-```
 
 ----------
+
 ### Harvest
 
 ```{r inputs_harvest}
@@ -410,6 +422,7 @@ renderUI({
 ```
 
 ----------
+
 ### Model
 
 ```{r inputs_model}
@@ -421,8 +434,43 @@ renderUI({
 
 ```
 
+----------
+
+### Processing
+
+```{r inputs_import}
+
+# select method for leaf area processing
+renderUI({
+  selectInput('method_area', 'Leaf area method', c("manual","sensor","model"))
+})
+
+# import raw files of pot weight
+renderUI({
+  actionLink("import", "Import (weight)")  
+})
+
+table_import <- eventReactive(
+  input$import, {
+    soil_weight(
+      experiment=input$experiment, index=data_index(), date_start=data_trial()$start)
+})
+
+
+# write processed raw files for analysis
+renderUI({
+  actionLink("write", "Write (weight)")  
+})
+
+observeEvent(input$write, {
+  write_rds(table_import(), paste0("data/",input$experiment,"/",input$experiment,"_weight.rds"), compress="bz2")  
+})
+
+
+```
 
 ----------
+
 ### Export
 
 ```{r inputs_export}
@@ -789,7 +837,6 @@ renderPlotly({
   ggplotly(
     data_plant() %>%
       filter(genotype == input$genotype) %>%
-      gather(method, area, area:area_active) %>% 
       mutate(area=area/1e6) %>% 
       ggplot(aes(x=time, y=area, color=treatment,
                  text=paste(
@@ -797,8 +844,11 @@ renderPlotly({
                  "<br>area: ", area,
                  "<br>plant_code: ", plant_code
                  ))) +
-      geom_point(data=. %>% filter(method=="area"), alpha=0.5) +
-      geom_smooth(aes(linetype=method), method="loess", se=FALSE) +
+      geom_point(alpha=0.5) +
+      geom_path(aes(group = plant_code), alpha = 0.3) +
+      geom_smooth(
+        aes(x=time, y=area, color=treatment),
+        method="loess", se=FALSE, inherit.aes=FALSE) +
       scale_treatment +
       labs(y="Plant area (m2)") +
       scale_x_datetime(
