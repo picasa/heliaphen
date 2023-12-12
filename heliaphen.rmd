@@ -13,6 +13,7 @@ library(readxl)
 library(tidyverse)
 library(broom)
 library(modelr)
+library(mgcv)
 library(viridis)
 library(plotly)
 library(scales)
@@ -608,7 +609,7 @@ renderPlotly({
                  "<br>cultivar: ", genotype
                  ))) +
       geom_point(alpha=0.3) +
-      geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
+      geom_line(stat="smooth", method="loess", alpha=0.8, linewidth=1) +
       geom_hline(aes(yintercept=0.1), linetype=2) +  
       scale_color_manual(values=c("#619CFF","#F8766D")) +
       scale_x_datetime(
@@ -674,7 +675,7 @@ renderPlotly({
                  "<br>cultivar: ", genotype
                  ))) +
       geom_point(alpha=0.3) +
-      geom_line(stat="smooth", method="loess", alpha=0.8, size=1) +
+      geom_line(stat="smooth", method="loess", alpha=0.8, linewidth=1) +
       geom_hline(aes(yintercept=input$threshold_ftsw), linetype=2) +  
       scale_color_manual(values=c("#619CFF","#F8766D")) +
       scale_x_datetime(
@@ -942,7 +943,7 @@ renderPlotly({
         data=data_model_expansion() %>%
           filter(genotype == input$genotype) %>% 
           unnest(prediction),
-        aes(x=FTSW, y=pred), color="#619CFF", size=1
+        aes(x=FTSW, y=pred), color="#619CFF", linewidth=1
       ) +
       coord_cartesian(xlim=c(0,1), ylim=c(0,1.5)) +
       labs(y="Relative Expansion Rate")
@@ -1041,7 +1042,7 @@ renderPlotly({
         data=data_model_transpiration() %>%
           filter(genotype == input$genotype) %>% 
           unnest(prediction),
-        aes(x=FTSW, y=pred), color="#619CFF", size=1
+        aes(x=FTSW, y=pred), color="#619CFF", linewidth=1
       ) +
       coord_cartesian(xlim=c(0,1), ylim=c(0,1.5)) +
       labs(y="Relative Transpiration Rate")
